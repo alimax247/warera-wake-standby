@@ -1,6 +1,5 @@
-# Backup public knock, separate repository. No secrets.
-# GitHub's own timer did not fire on the free plan, so this job also arms the next
-# knock itself after four minutes. Several of these run side by side.
+# Short public knock every 5 minutes, and a spare starter for the long shift.
+# No secrets.
 name: standby-e
 
 on:
@@ -17,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - name: Knock the site and wake the clock
+      - name: Knock the site
         run: |
           set -u
           BASE="https://warera-bot-y8ia.onrender.com"
@@ -33,13 +32,16 @@ jobs:
             sleep 12
           done
           echo "response:"
-          head -c 300 /tmp/wake.txt 2>/dev/null || true
+          head -c 200 /tmp/wake.txt 2>/dev/null || true
           echo
           test "$ok" = "1"
-      - name: Arm the next knock
+      - name: Make sure the long shift is running
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sleep 240
-          gh workflow run standby-e.yml --ref main --repo ${{ github.repository }}
+          count=$(gh run list --workflow shift.yml --status in_progress --limit 5 --json databaseId --jq 'length')
+          echo "shifts running: $count"
+          if [ "$count" = "0" ]; then
+            gh workflow run shift.yml --ref main --repo ${{ github.repository }} || true
+          fi

@@ -1,0 +1,54 @@
+# Long shift. Knocks the site every 5 minutes for about four hours, then starts
+# the next shift itself. No secrets. Several public repos do this at once, so
+# one stopped clock does not leave the server asleep.
+name: shift
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: render-shift
+  cancel-in-progress: false
+
+jobs:
+  knock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Knock every 5 minutes
+        run: |
+          set -u
+          BASE="https://warera-bot-y8ia.onrender.com"
+          for n in $(seq 1 48); do
+            echo "knock $n $(date -u +%H:%M:%S)"
+            curl -sS -o /dev/null -w "home:%{http_code}\n" --retry 3 --retry-all-errors --retry-delay 5 --max-time 70 "$BASE/" || true
+            ok=0
+            for i in 1 2 3 4 5 6; do
+              code=$(curl -sS -o /tmp/wake.txt -w "%{http_code}" --max-time 90 "$BASE/api/cron/production?wake=1" || echo "000")
+              echo "try $i wake:$code"
+              if [ "$code" = "200" ]; then
+                ok=1
+                break
+              fi
+              sleep 12
+            done
+            echo "response:"
+            head -c 200 /tmp/wake.txt 2>/dev/null || true
+            echo
+            if [ "$ok" != "1" ]; then
+              echo "site did not answer 200 on knock $n"
+            fi
+            if [ "$n" != "48" ]; then
+              sleep 300
+            fi
+          done
+      - name: Start the next shift
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run shift.yml --ref main --repo ${{ github.repository }} || true
