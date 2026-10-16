@@ -1,5 +1,6 @@
-# Backup knock standby-c (minute 2). Each file is its own workflow so one failure does not silence the others.
-# Free private repositories never ran their schedule; this public repo does.
+# Backup public knock, separate repository. No secrets.
+# GitHub's own timer did not fire on the free plan, so this job also arms the next
+# knock itself after four minutes. Several of these run side by side.
 name: standby-c
 
 on:
@@ -7,10 +8,14 @@ on:
     - cron: "2-59/5 * * * *"
   workflow_dispatch: {}
 
+permissions:
+  actions: write
+  contents: read
+
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Knock the site and wake the clock
         run: |
@@ -31,3 +36,10 @@ jobs:
           head -c 300 /tmp/wake.txt 2>/dev/null || true
           echo
           test "$ok" = "1"
+      - name: Arm the next knock
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 240
+          gh workflow run standby-c.yml --ref main --repo ${{ github.repository }}
