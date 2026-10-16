@@ -1,0 +1,33 @@
+# Backup knock standby-e (minute 4). Each file is its own workflow so one failure does not silence the others.
+# Free private repositories never ran their schedule; this public repo does.
+name: standby-e
+
+on:
+  schedule:
+    - cron: "4-59/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Knock the site and wake the clock
+        run: |
+          set -u
+          BASE="https://warera-bot-y8ia.onrender.com"
+          curl -sS -o /dev/null -w "home:%{http_code}\n" --retry 4 --retry-all-errors --retry-delay 8 --max-time 90 "$BASE/" || true
+          ok=0
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -sS -o /tmp/wake.txt -w "%{http_code}" --max-time 90 "$BASE/api/cron/production?wake=1" || echo "000")
+            echo "try $i wake:$code"
+            if [ "$code" = "200" ]; then
+              ok=1
+              break
+            fi
+            sleep 12
+          done
+          echo "response:"
+          head -c 300 /tmp/wake.txt 2>/dev/null || true
+          echo
+          test "$ok" = "1"
